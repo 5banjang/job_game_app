@@ -1,5 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// 이미지 리사이즈 함수
+async function resizeImage(file: File, targetWidth: number, targetHeight: number): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    
+    img.onload = () => {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      
+      if (ctx) {
+        // 이미지를 캔버스에 그리기 (비율 유지하면서 크롭)
+        const scale = Math.max(targetWidth / img.width, targetHeight / img.height);
+        const scaledWidth = img.width * scale;
+        const scaledHeight = img.height * scale;
+        const x = (targetWidth - scaledWidth) / 2;
+        const y = (targetHeight - scaledHeight) / 2;
+        
+        ctx.fillStyle = '#FFFFFF'; // 배경을 흰색으로
+        ctx.fillRect(0, 0, targetWidth, targetHeight);
+        ctx.drawImage(img, x, y, scaledWidth, scaledHeight);
+        
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const resizedFile = new File([blob], file.name, { type: 'image/jpeg' });
+            resolve(resizedFile);
+          } else {
+            reject(new Error('이미지 리사이즈 실패'));
+          }
+        }, 'image/jpeg', 0.9);
+      } else {
+        reject(new Error('Canvas context 생성 실패'));
+      }
+    };
+    
+    img.onerror = () => reject(new Error('이미지 로드 실패'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+// 서버사이드에서 Sharp를 사용한 이미지 리사이즈
+async function resizeImageServer(imageBuffer: Buffer, targetWidth: number, targetHeight: number): Promise<Buffer> {
+  // Sharp 라이브러리 동적 import
+  const sharp = (await import('sharp')).default;
+  
+  return await sharp(imageBuffer)
+    .resize(targetWidth, targetHeight, {
+      fit: 'cover',
+      position: 'center',
+      background: { r: 255, g: 255, b: 255 }
+    })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+}
+
 export async function POST(request: NextRequest) {
   try {
     // API 키 확인
@@ -39,12 +95,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 이미지를 1024x1024로 리사이즈
+    let processedImageFile: File;
+    try {
+      const imageBuffer = Buffer.from(await imageFile.arrayBuffer());
+      const resizedBuffer = await resizeImageServer(imageBuffer, 1024, 1024);
+      processedImageFile = new File([resizedBuffer], imageFile.name, { type: 'image/jpeg' });
+      console.log('이미지가 1024x1024로 리사이즈되었습니다.');
+    } catch (resizeError) {
+      console.error('이미지 리사이즈 실패:', resizeError);
+      return NextResponse.json(
+        { error: '이미지 처리 중 오류가 발생했습니다.' },
+        { status: 500 }
+      );
+    }
+
     // 프롬프트 생성 - 더 창의적이고 재미있게 구성
     const prompt = `A professional portrait of a person working as a "${jobText}" in a fun, creative, and modern style. The person should be wearing appropriate attire and be in a relevant work environment. High quality, detailed, photorealistic, good lighting, professional photography style.`;
 
     // Stability AI API에 보낼 FormData 생성
     const stabilityFormData = new FormData();
-    stabilityFormData.append('init_image', imageFile);
+    stabilityFormData.append('init_image', processedImageFile);
     stabilityFormData.append('init_image_mode', 'IMAGE_STRENGTH');
     stabilityFormData.append('image_strength', '0.6');
     stabilityFormData.append('text_prompts[0][text]', prompt);
