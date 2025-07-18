@@ -52,9 +52,7 @@ export async function POST(request: NextRequest) {
     stabilityFormData.append('cfg_scale', '7');
     stabilityFormData.append('samples', '1');
     stabilityFormData.append('steps', '30');
-    // 지원되는 크기로 설정 (1024x1024)
-    stabilityFormData.append('width', '1024');
-    stabilityFormData.append('height', '1024');
+    // image-to-image에서는 width/height 설정 불가 (출력 크기는 입력 이미지와 동일)
 
     // Stability AI API 호출
     console.log('Sending request to Stability AI API...');

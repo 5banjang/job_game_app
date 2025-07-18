@@ -25,6 +25,12 @@ interface GenerationData {
   status: string;
 }
 
+declare global {
+  interface Window {
+    Kakao: any;
+  }
+}
+
 export default function ResultPage({ params }: ResultPageProps) {
   const router = useRouter();
   const [id, setId] = useState<string>('');
@@ -33,6 +39,7 @@ export default function ResultPage({ params }: ResultPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [loadingMessage, setLoadingMessage] = useState('당신의 천직을 찾는 중...');
   const [generationData, setGenerationData] = useState<GenerationData | null>(null);
+  const [isKakaoLoaded, setIsKakaoLoaded] = useState(false);
 
   // 로딩 메시지 배열
   const loadingMessages = [
@@ -45,6 +52,29 @@ export default function ResultPage({ params }: ResultPageProps) {
     '🎭 당신의 숨겨진 재능을 발견하는 중...',
     '🎪 재미있는 직업 세계를 탐험하는 중...'
   ];
+
+  // 카카오 SDK 로드
+  useEffect(() => {
+    const loadKakaoSDK = () => {
+      if (window.Kakao && window.Kakao.isInitialized()) {
+        setIsKakaoLoaded(true);
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js';
+      script.onload = () => {
+        const kakaoKey = process.env.NEXT_PUBLIC_KAKAO_APP_KEY;
+        if (window.Kakao && kakaoKey && kakaoKey !== 'your_kakao_javascript_key_here') {
+          window.Kakao.init(kakaoKey);
+          setIsKakaoLoaded(true);
+        }
+      };
+      document.head.appendChild(script);
+    };
+
+    loadKakaoSDK();
+  }, []);
 
   useEffect(() => {
     // URL 파라미터 추출
@@ -144,6 +174,80 @@ export default function ResultPage({ params }: ResultPageProps) {
       localStorage.removeItem(`generation_${id}`);
     }
     router.push('/');
+  };
+
+  // 카카오톡 공유 기능
+  const handleKakaoShare = () => {
+    if (!window.Kakao || !isKakaoLoaded || !result) {
+      alert('카카오톡 공유 기능을 사용할 수 없습니다.');
+      return;
+    }
+
+    const currentUrl = window.location.href;
+    
+    window.Kakao.Share.sendDefault({
+      objectType: 'feed',
+      content: {
+        title: 'AI가 찾아준 내 직업 확인하기!',
+        description: `AI가 분석한 나의 숨겨진 직업은 "${result.jobText}"입니다! 당신도 AI로 미래 직업을 찾아보세요!`,
+        imageUrl: `data:image/png;base64,${result.imageData}`,
+        link: {
+          mobileWebUrl: currentUrl,
+          webUrl: currentUrl,
+        },
+      },
+      social: {
+        likeCount: Math.floor(Math.random() * 100) + 50,
+        commentCount: Math.floor(Math.random() * 20) + 5,
+      },
+      buttons: [
+        {
+          title: '나도 직업 찾기',
+          link: {
+            mobileWebUrl: window.location.origin,
+            webUrl: window.location.origin,
+          },
+        },
+        {
+          title: '결과 보기',
+          link: {
+            mobileWebUrl: currentUrl,
+            webUrl: currentUrl,
+          },
+        },
+      ],
+    });
+  };
+
+  // 링크 복사 기능
+  const handleCopyLink = async () => {
+    try {
+      const currentUrl = window.location.href;
+      await navigator.clipboard.writeText(currentUrl);
+      
+      // 성공 알림
+      const button = document.getElementById('copy-link-button');
+      if (button) {
+        const originalText = button.textContent;
+        button.textContent = '✅ 복사완료!';
+        button.style.background = 'linear-gradient(to right, #10b981, #059669)';
+        
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.style.background = '';
+        }, 2000);
+      }
+    } catch (err) {
+      console.error('링크 복사 실패:', err);
+      // 폴백: 텍스트 선택
+      const textArea = document.createElement('textarea');
+      textArea.value = window.location.href;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      alert('링크가 복사되었습니다!');
+    }
   };
 
   if (isLoading) {
@@ -306,7 +410,39 @@ export default function ResultPage({ params }: ResultPageProps) {
             </div>
           )}
 
-          {/* 액션 버튼들 */}
+          {/* 공유 버튼들 */}
+          <div className="space-y-4 max-w-lg mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* 카카오톡 공유 버튼 */}
+              <button
+                onClick={handleKakaoShare}
+                disabled={!isKakaoLoaded}
+                className={`
+                  flex items-center justify-center space-x-2 py-4 px-6 rounded-xl text-lg font-bold
+                  transition-all duration-300 shadow-2xl transform hover:scale-105
+                  ${isKakaoLoaded 
+                    ? 'bg-gradient-to-r from-yellow-300 to-yellow-500 text-black hover:from-yellow-400 hover:to-yellow-600' 
+                    : 'bg-gray-500 text-gray-300 cursor-not-allowed'
+                  }
+                `}
+              >
+                <span className="text-2xl">💬</span>
+                <span>카카오톡 공유</span>
+              </button>
+
+              {/* 링크 복사 버튼 */}
+              <button
+                id="copy-link-button"
+                onClick={handleCopyLink}
+                className="flex items-center justify-center space-x-2 bg-gradient-to-r from-blue-400 to-purple-500 text-white font-bold py-4 px-6 rounded-xl text-lg hover:from-blue-500 hover:to-purple-600 transform hover:scale-105 transition-all duration-300 shadow-2xl"
+              >
+                <span className="text-2xl">🔗</span>
+                <span>링크 복사</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 기존 액션 버튼들 */}
           <div className="space-y-4 max-w-md mx-auto">
             <button
               onClick={handleTryAgain}
