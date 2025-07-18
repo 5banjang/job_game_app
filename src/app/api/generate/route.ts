@@ -52,6 +52,9 @@ export async function POST(request: NextRequest) {
     stabilityFormData.append('cfg_scale', '7');
     stabilityFormData.append('samples', '1');
     stabilityFormData.append('steps', '30');
+    // 지원되는 크기로 설정 (1024x1024)
+    stabilityFormData.append('width', '1024');
+    stabilityFormData.append('height', '1024');
 
     // Stability AI API 호출
     console.log('Sending request to Stability AI API...');
@@ -85,8 +88,19 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // 더 자세한 에러 정보 제공
+      let errorMessage = 'AI 이미지 생성 중 오류가 발생했습니다.';
+      try {
+        const errorData = JSON.parse(errorText);
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        }
+      } catch {
+        // JSON 파싱 실패 시 기본 메시지 사용
+      }
+
       return NextResponse.json(
-        { error: 'AI 이미지 생성 중 오류가 발생했습니다.' },
+        { error: errorMessage },
         { status: 500 }
       );
     }

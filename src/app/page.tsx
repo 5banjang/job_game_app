@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface GenerateResponse {
   success: boolean;
@@ -12,6 +13,7 @@ interface GenerateResponse {
 }
 
 export default function Home() {
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -68,31 +70,35 @@ export default function Home() {
       return;
     }
 
-    setIsGenerating(true);
-    setErrorMessage(null);
-
+    // 고유 ID 생성 (현재 시간 + 랜덤값)
+    const generationId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
     try {
-      const formData = new FormData();
-      formData.append('image', selectedFile);
-      formData.append('jobText', jobText.trim());
-
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        body: formData,
+      // 파일을 Base64로 변환
+      const fileBase64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(selectedFile);
       });
 
-      const result: GenerateResponse = await response.json();
+      // 로컬 스토리지에 생성 요청 데이터 저장
+      const generationData = {
+        id: generationId,
+        jobText: jobText.trim(),
+        imageFile: fileBase64,
+        fileName: selectedFile.name,
+        timestamp: Date.now(),
+        status: 'pending'
+      };
 
-      if (result.success && result.imageData) {
-        setGeneratedImage(result.imageData);
-      } else {
-        setErrorMessage(result.error || '이미지 생성에 실패했습니다.');
-      }
+      localStorage.setItem(`generation_${generationId}`, JSON.stringify(generationData));
+
+      // 결과 페이지로 이동
+      router.push(`/result/${generationId}`);
+
     } catch (error) {
-      console.error('Generation error:', error);
-      setErrorMessage('네트워크 오류가 발생했습니다.');
-    } finally {
-      setIsGenerating(false);
+      console.error('Generation preparation error:', error);
+      setErrorMessage('이미지 처리 중 오류가 발생했습니다.');
     }
   };
 
@@ -231,6 +237,11 @@ export default function Home() {
                   placeholder="예: 고양이 수염 염색 전문가, 우주 카페 바리스타, 드론 택배 조종사..."
                   className="w-full px-4 py-3 rounded-xl bg-white/20 text-white placeholder-white/70 border-2 border-white/30 focus:border-yellow-300 focus:outline-none transition-all duration-300"
                   disabled={isGenerating}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && selectedFile && jobText.trim()) {
+                      handleGenerateImage();
+                    }
+                  }}
                 />
                 <p className="text-yellow-200 text-sm mt-2">
                   💡 창의적이고 재미있는 직업일수록 더 흥미로운 결과가 나와요!
